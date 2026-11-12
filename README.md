@@ -1,3 +1,5 @@
+> **Frontend renovado:** React + TypeScript + Vite. Para compilar, iniciar y validar la interfaz actual, consulta [la guía del frontend](docs/frontend-redesign.md). Las secciones de validación anterior documentan fases históricas.
+
 # Acero Cifrado — inspección visual de piezas metálicas
 
 Adaptación universitaria de [Hvora2005/industrial-defect-detection](https://github.com/Hvora2005/industrial-defect-detection).
@@ -9,6 +11,32 @@ No incluye entrenamiento nuevo, ESP32 ni controles de motores.
 captura sin ellos. En esta fase se validó un modelo de defectos de terceros, identificado
 en la sección de inferencia; no se presenta como el modelo original de Hvora2005.
 Una vista previa nunca devuelve PASS/FAIL ni registra inspecciones.
+
+## Arrancar el proyecto con un comando
+
+Con el entorno `.venv`, Node.js y los pesos del modelo preparados, abre PowerShell
+en la raíz del proyecto y ejecuta:
+
+```powershell
+.\iniciar.ps1
+```
+
+El comando comprueba el entorno y CUDA, instala las dependencias del frontend si
+hacen falta, compila la interfaz y arranca FastAPI con toda la aplicación.
+Si ya hay una instancia con el mismo frontend en el puerto, muestra su dirección
+sin iniciar otra.
+
+Abre **[http://127.0.0.1:8000](http://127.0.0.1:8000)**. Para detener el servidor que
+iniciaste, pulsa **Ctrl+C** en esa terminal.
+
+Para usar otro puerto o seleccionar CPU:
+
+```powershell
+.\iniciar.ps1 -Puerto 8001 -Dispositivo cpu
+```
+
+Consulta la [preparación inicial y las opciones de inicio](docs/frontend-redesign.md#inicio-con-un-comando)
+si faltan dependencias, pesos o Windows bloquea la ejecución del script.
 
 ## Repositorio del equipo y origen
 
@@ -61,8 +89,8 @@ Webcam USB / imagen / video → backend/capture.py → POST /detect
 
 | Componente | Responsabilidad |
 |---|---|
-| `frontend/` | HTML, CSS y JavaScript sin compilación: captura, monitor y dashboard |
-| `frontend/app.js` | `getUserMedia` con cámara trasera preferida; canvas a JPEG, máximo 640 px; captura manual, envío periódico cada 2 s y carga de imágenes |
+| `frontend/` | React + TypeScript + Vite: inspección, panel, historial, estadísticas, configuración y monitor |
+| `frontend/src/views/Inspection.tsx` | Cámara USB del servidor, cámara del navegador/teléfono, captura manual, vista previa sin registro y carga de imágenes |
 | `backend/main.py` | FastAPI, rutas de inspección y páginas; difunde los resultados al monitor |
 | `backend/capture.py` | Cliente OpenCV añadido: selección por índice, búsqueda de cámaras, imagen/video local y vista previa; reutiliza `/detect` |
 | `backend/detector.py` | Comprueba clases NEU-DET y tarea, ejecuta inferencia, dibuja cajas, clases y confianza; emite `FAIL` o `NO_DETECTIONS` |
@@ -83,7 +111,7 @@ envía fotos periódicas. Estas fuentes y sus rutas siguen disponibles.
 - `requirements.txt` conserva las dependencias originales con versiones mínimas:
   Ultralytics (incluye PyTorch), OpenCV, NumPy y Pillow; FastAPI, Uvicorn, multipart,
   WebSockets y Jinja2; SQLAlchemy, fpdf2 y cryptography; utilidades de datos y entrenamiento.
-- `requirements-dev.txt` añade pytest y HTTPX para probar la API. No se requiere Node.js.
+- `requirements-dev.txt` añade pytest y HTTPX para probar la API. La compilación y las pruebas del frontend requieren Node.js; consulta [el rediseño](docs/frontend-redesign.md).
 - La vista previa gráfica necesita `opencv-python` con ventanas. `--headless` evita
   las ventanas; no instales simultáneamente distintas variantes de OpenCV.
 - El entrenamiento original usa `yolo11n.pt` como base. `train.py` tiene valores por defecto
@@ -181,6 +209,8 @@ Si el controlador automático falla, repite búsqueda y captura con el mismo bac
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
+
+Compila primero la interfaz con `npm --prefix frontend ci` y `npm --prefix frontend run build`.
 
 Abre [la interfaz](http://127.0.0.1:8000/), [el monitor](http://127.0.0.1:8000/monitor),
 [el dashboard](http://127.0.0.1:8000/dashboard) o [la documentación API](http://127.0.0.1:8000/docs).
@@ -430,7 +460,7 @@ $env:ACERO_DEVICE = 'auto'
 ```
 
 Abre [Dashboard](http://127.0.0.1:8000/dashboard). El equipo sin GPU puede usar los mismos
-comandos con `ACERO_DEVICE='cpu'`. El frontend usa fuentes del sistema, sin peticiones a
+comandos con `ACERO_DEVICE='cpu'`. El frontend incluye la fuente Manrope en su compilación, sin peticiones a
 Google Fonts ni dependencias CDN. Una vez instalados paquetes y pesos, la captura e
 inferencia funcionan localmente. Las descargas y enlaces de documentación sí necesitan red.
 
@@ -549,8 +579,8 @@ comprueba el multipart contra FastAPI, los endpoints originales, SQLite temporal
 con un detector simulado. **No valida inferencia YOLO ni hardware**.
 La suite amplía las 50 pruebas iniciales con contratos del detector, umbrales, rechazo de
 modelos incompatibles, guardado y lectura de video, errores de codec, descarga con hash,
-estadísticas, reportes y presentación de estados. Las tres pruebas de renderizado usan
-Node si está instalado y se omiten si no lo está; no es una dependencia de ejecución.
+estadísticas y reportes. La cobertura anterior de renderizado se migró a React Testing Library
+y Playwright; se ejecuta con `npm --prefix frontend test` y `npm --prefix frontend run test:e2e`.
 Las validaciones con pesos reales de la tabla anterior se ejecutan aparte de pytest.
 
 El archivo original `training/test_inference.py` es un script manual, no una suite automatizada.
