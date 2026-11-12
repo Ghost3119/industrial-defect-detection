@@ -29,19 +29,13 @@ export function Settings({
           title="Modelo de inspección"
           detail={
             health?.model_loaded
-              ? "Disponible para inferencia"
+              ? "Detector de superficies disponible"
               : "Sin pesos cargados"
           }
         >
-          <div className="readonly-tag">
-            Consulta · sin cambios de modelo desde la interfaz
-          </div>
-          <p className="muted">
-            El archivo de pesos se selecciona al iniciar FastAPI con{" "}
-            <code>ACERO_MODEL_PATH</code>. El backend no ofrece un selector de
-            modelos.
-          </p>
-          <h3 className="subheading">Clases disponibles</h3>
+          <p className="muted">Configura los pesos del detector con <code>ACERO_MODEL_PATH</code> y los del clasificador con <code>ACERO_CLASSIFIER_PATH</code>.</p>
+          <p>Clasificador de estampado · {runtime?.classifier_loaded ? "Disponible" : "Sin pesos cargados"}</p>
+          <h3 className="subheading">Clases del detector</h3>
           <div className="class-tags">
             {health?.classes.map((c) => <span key={c}>{defectName(c)}</span>) ||
               "Sin información"}
@@ -53,7 +47,7 @@ export function Settings({
         >
           <dl className="system-details">
             <div>
-              <dt>Dispositivo activo</dt>
+              <dt>Dispositivo activo del detector</dt>
               <dd>{runtime?.active_device || "Aún sin inferencia"}</dd>
             </div>
             <div>

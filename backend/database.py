@@ -19,7 +19,7 @@ from sqlalchemy import (
     inspect,
     event,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, joinedload, sessionmaker, relationship
 
 
 # --------------------------------------------------
@@ -96,6 +96,7 @@ class Inspection(Base):
     )
 
     # Relación uno a muchos con la tabla defects.
+    classification = relationship("ClassificationRecord", uselist=False, cascade="all, delete-orphan")
     defects = relationship(
         "Defect",
         back_populates="inspection",
@@ -144,6 +145,12 @@ class Defect(Base):
 # --------------------------------------------------
 
 # Crear las tablas si todavía no existen.
+class ClassificationRecord(Base):
+    __tablename__ = "stamped_classifications"
+    inspection_id = Column(Integer, ForeignKey("inspections.id"), primary_key=True)
+    payload = Column(String, nullable=False)
+
+
 Base.metadata.create_all(engine)
 
 
@@ -310,6 +317,10 @@ def save_inspection(result: dict) -> None:
 
         # Guardar la inspección y sus defectos
         # dentro de una misma transacción.
+        if "classification" in result:
+            payload = dict(result["classification"], captures=result.get("captures"),
+                           inference_ms=result.get("inference_ms"), device=result.get("inference_device"))
+            record.classification = ClassificationRecord(payload=json.dumps(payload, allow_nan=False))
         session.add(record)
         session.commit()
 
@@ -334,6 +345,7 @@ def get_recent_inspections(limit: int = 50) -> list[dict]:
         # Consultar las inspecciones ordenadas por ID.
         rows = (
             session.query(Inspection)
+            .options(joinedload(Inspection.classification))
             .order_by(Inspection.id.desc())
             .limit(limit)
             .all()
@@ -353,6 +365,7 @@ def get_recent_inspections(limit: int = 50) -> list[dict]:
                 "primary_defect": r.primary_defect,
                 "primary_confidence": r.primary_confidence,
                 "severity": r.severity,
+                **({"classification": json.loads(r.classification.payload)} if r.classification else {}),
             }
             for r in rows
         ]
@@ -372,7 +385,7 @@ def get_stats() -> dict:
 
     try:
         # Recuperar las inspecciones y los defectos.
-        inspections = session.query(Inspection).all()
+        inspections = session.query(Inspection).filter(~Inspection.classification.has()).all()
         defects = session.query(Defect).all()
 
         # Cantidad total de inspecciones.
@@ -471,6 +484,7 @@ def get_trend(
         # Recuperar las inspecciones ordenadas cronológicamente.
         rows = (
             session.query(Inspection)
+            .filter(~Inspection.classification.has())
             .order_by(Inspection.timestamp.asc())
             .all()
         )

@@ -17,6 +17,7 @@ except ImportError:
 class CameraSession:
     def __init__(self, predict, capture_dir: Path):
         self.predict = predict
+        self._session_predict = predict
         self.capture_dir = capture_dir
         self._lock = RLock()
         self._lifecycle = Lock()
@@ -36,7 +37,7 @@ class CameraSession:
             return {**self._state, "confidence": self._conf, "requested_device": self._device}
 
     def start(self, source: int | Path, *, backend="auto", width=640, height=480, fps=30,
-              conf=0.4, device="auto", loop=False) -> dict:
+              conf=0.4, device="auto", loop=False, predictor=None, mode="detector") -> dict:
         with self._lifecycle:
             if self._thread is not None and self._thread.is_alive():
                 raise CaptureError("Capture is already active. Stop it before changing source.")
@@ -44,7 +45,8 @@ class CameraSession:
             with self._lock:
                 self._raw = self._jpeg = None
                 self._conf, self._device = conf, device
-                self._state = {"state": "starting", "running": True, "error": None,
+                self._session_predict = predictor or self.predict
+                self._state = {"mode": mode, "state": "starting", "running": True, "error": None,
                                "source": str(source), "source_type": "camera" if isinstance(source, int) else "video", "backend": backend,
                                "frames_processed": 0, "inspections_recorded": 0,
                                "requested": {"width": width, "height": height, "fps": fps}}
@@ -72,7 +74,7 @@ class CameraSession:
                             raise CaptureError("Camera disconnected, busy, or no readable frames remain. Reconnect and start again.")
                     with self._lock:
                         conf, device = self._conf, self._device
-                    result = self.predict(frame, conf=conf, device=device)
+                    result = self._session_predict(frame, conf=conf, device=device)
                     annotated = annotated_frame(result)
                     ok, encoded = cv2.imencode(".jpg", annotated)
                     if not ok:
@@ -128,7 +130,8 @@ class CameraSession:
                 if not self._state["running"] or self._raw is None:
                     raise CaptureError("No active camera frame. Start capture and wait for the preview.")
                 frame, conf, device = self._raw.copy(), self._conf, self._device
-            result = self.predict(frame, conf=conf, device=device)
+                predictor = self._session_predict
+            result = predictor(frame, conf=conf, device=device)
             self.capture_dir.mkdir(parents=True, exist_ok=True)
             original = self.capture_dir / f"{request_id}_original.jpg"
             annotated = self.capture_dir / f"{request_id}_annotated.jpg"

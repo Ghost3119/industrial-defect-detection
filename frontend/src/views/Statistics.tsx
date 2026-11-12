@@ -19,7 +19,7 @@ export function Statistics({
       <Metrics stats={stats} />
       <Panel
         title="Inspecciones por periodo"
-        detail="Conteos de capturas registradas, no de fotogramas"
+        detail="Capturas registradas con el detector de superficies"
         action={
           <label className="inline-label">
             Agrupar por

@@ -44,6 +44,7 @@ export function useCamera(onCapture: (result: Detection) => void) {
       setOptions((o) => ({
         ...o,
         source,
+        mode: state.mode || "detector",
         device: state.requested_device,
         conf: state.confidence,
         ...state.requested,

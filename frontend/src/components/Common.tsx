@@ -6,13 +6,13 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Detection, HistoryRow } from "../types";
+import type { Classification, Detection, HistoryRow } from "../types";
 import { dateTime, defectName, num, severityName, statusName } from "../format";
 
 export function Badge({ status }: { status: string }) {
   return (
     <span
-      className={`badge ${status === "FAIL" ? "warn" : status === "NO_DETECTIONS" ? "neutral" : "legacy"}`}
+      className={`badge ${["FAIL", "DEFECTO_PREDICHO", "REVISAR"].includes(status) ? "warn" : status === "NO_DETECTIONS" ? "neutral" : "legacy"}`}
     >
       <i />
       {statusName(status)}
@@ -120,10 +120,10 @@ export function HistoryTable({
             <tr key={row.id}>
               <td className="record-id">#{String(row.id).padStart(4, "0")}</td>
               <td>{dateTime(row.timestamp)}</td>
-              <td>{defectName(row.primary_defect)}</td>
+              <td>{defectName(row.classification?.predicted || row.primary_defect)}</td>
               <td>
-                {num(row.primary_confidence, 1)}
-                {row.primary_confidence != null ? "%" : ""}
+                {num(row.classification ? 100 * row.classification.confidence : row.primary_confidence, 1)}
+                {row.classification || row.primary_confidence != null ? "%" : ""}
               </td>
               <td>
                 <Badge status={row.status} />
@@ -144,6 +144,16 @@ export function HistoryTable({
     </div>
   );
 }
+export function ClassScores({ value }: { value: Classification }) {
+  return <div className="classification-scores">
+    <p>{value.model}</p>
+    <h3>{defectName(value.predicted)} · {num(value.confidence * 100, 1)}%</h3>
+    <dl className="system-details">
+      {Object.entries(value.scores).map(([name, score]) => <div key={name}><dt>{defectName(name)}</dt><dd>{num(score * 100, 1)}%</dd></div>)}
+    </dl>
+    <p className="microcopy">Calidad pendiente de validación. Umbral provisional de revisión: {num(value.review_threshold * 100)}%.</p>
+  </div>;
+}
 export function ResultPanel({
   result,
   originalUrl,
@@ -163,6 +173,12 @@ export function ResultPanel({
           Inicia la cámara y captura una pieza. La vista previa no registra
           inspecciones.
         </Empty>
+      ) : result.classification ? (
+        <>
+          <div className="result-photo"><img src={`data:image/jpeg;base64,${result.annotated_image}`} alt="Pieza estampada inspeccionada" /></div>
+          <ClassScores value={result.classification} />
+          <a href={result.captures?.original_url || originalUrl || `data:image/jpeg;base64,${result.annotated_image}`} download="pieza.jpg">Descargar imagen inspeccionada</a>
+        </>
       ) : (
         <>
           <div className="result-photo">

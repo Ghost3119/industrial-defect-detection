@@ -5,7 +5,20 @@ export interface Defect {
   severity: string;
   bbox?: { x1: number; y1: number; x2: number; y2: number };
 }
+export type ModelMode = "detector" | "clasificador";
+export interface Classification {
+  model: string;
+  weights_sha256: string;
+  predicted: string;
+  confidence: number;
+  scores: Record<string, number>;
+  review_threshold: number;
+  inference_ms?: number;
+  device?: string;
+  captures?: { original_url: string } | null;
+}
 export interface Detection {
+  classification?: Classification;
   status: string;
   defects_found: number;
   defects: Defect[];
@@ -14,11 +27,12 @@ export interface Detection {
   inference_device?: string;
   inference_ms?: number;
   processing_fps?: number;
-  captures?: { original_url: string; annotated_url: string };
+  captures?: { original_url: string; annotated_url?: string };
   capture_id?: string;
   duplicate?: boolean;
 }
 export interface HistoryRow {
+  classification?: Classification;
   id: number;
   timestamp: string;
   status: string;
@@ -45,6 +59,7 @@ export interface Bucket {
   pass: number;
 }
 export interface Runtime {
+  classifier_loaded?: boolean;
   cuda_available: boolean;
   gpus: { index: number; name: string; memory_mb: number }[];
   torch_version: string;
@@ -59,6 +74,7 @@ export interface Health {
   classes: string[];
 }
 export interface CameraState {
+  mode?: ModelMode;
   state: string;
   running: boolean;
   error?: string | null;
@@ -77,6 +93,7 @@ export interface CameraState {
   processing_fps?: number;
 }
 export interface CameraOptions {
+  mode?: ModelMode;
   source: string;
   backend: "auto" | "dshow" | "msmf";
   width: number;

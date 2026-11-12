@@ -11,6 +11,17 @@ const row = {
   primary_confidence: null,
   severity: null,
 };
+test("stamped result shows the three scores and pending quality on a whole image", () => {
+  render(<ResultPanel result={{ status: "REVISAR", defects_found: 0, defects: [], severity: null, annotated_image: "",
+    classification: { model: "YOLO11n-cls estampadas", predicted: "ok", confidence: .75, review_threshold: .90,
+      weights_sha256: "test", scores: {ok: .75, ruptura_deformacion: .10, falta_embutido_material: .15} } }} />);
+  expect(screen.getByText("REVISAR")).toBeVisible();
+  expect(screen.getByText(/Calidad pendiente de validación/)).toBeVisible();
+  expect(screen.getByText("Falta de embutido y material")).toBeVisible();
+  expect(screen.getByText("Ruptura y deformación")).toBeVisible();
+  expect(screen.getByText("OK", {exact: true})).toBeVisible();
+  expect(screen.queryByText(/zonas señaladas/)).not.toBeInTheDocument();
+});
 test("absence of detections never certifies approval", () => {
   render(
     <ResultPanel

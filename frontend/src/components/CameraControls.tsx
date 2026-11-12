@@ -20,6 +20,16 @@ export function CameraControls({
     <div className={`camera-settings ${compact ? "compact" : ""}`}>
       <div className="form-grid">
         <label>
+          Modelo de inspección
+          <select value={options.mode || "detector"} disabled={locked} onChange={(e) => {
+            const mode = e.target.value === "clasificador" ? "clasificador" : "detector";
+            setOptions((o) => ({ ...o, mode, conf: mode === "clasificador" ? 0.90 : 0.40 }));
+          }}>
+            <option value="detector">Detector de superficies · YOLO11n</option>
+            <option value="clasificador" disabled={!runtime?.classifier_loaded}>Clasificador de piezas estampadas</option>
+          </select>
+        </label>
+        <label>
           Fuente de cámara
           <select
             value={options.source}
@@ -123,7 +133,9 @@ export function CameraControls({
           onChange={(e) => number("conf", e.target.value)}
         />
         <p>
-          Se muestran detecciones con una confianza igual o mayor a este valor.
+          {options.mode === "clasificador"
+            ? "Umbral provisional de revisión. Una puntuación inferior marca REVISAR."
+            : "Se muestran detecciones con una confianza igual o mayor a este valor."}
         </p>
       </div>
       <div className="button-row">

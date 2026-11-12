@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import {
   Badge,
+  ClassScores,
   Empty,
   ErrorNotice,
   HistoryTable,
@@ -60,6 +61,12 @@ export function HistoryDetail({
         </button>
       </header>
       <Badge status={row.status} />
+      {row.classification ? <>
+        <p>{dateTime(row.timestamp)}</p>
+        <ClassScores value={row.classification} />
+        <p>{row.classification.device} · Inferencia {num(row.classification.inference_ms, 1)} ms</p>
+        {row.classification.captures?.original_url && <div className="result-photo"><img src={row.classification.captures.original_url} alt="Pieza estampada inspeccionada" /></div>}
+      </> : <>
       <dl className="detail-grid">
         <div>
           <dt>Fecha y hora local</dt>
@@ -102,6 +109,7 @@ export function HistoryDetail({
         Sin detecciones no equivale a una pieza aprobada. Los registros
         históricos de aprobación permanecen sin verificar.
       </p>
+      </>}
     </dialog>
   );
 }
@@ -167,6 +175,9 @@ export function History({
             <option value="">Todos</option>
             <option value="FAIL">Con hallazgos</option>
             <option value="NO_DETECTIONS">Sin detecciones</option>
+            <option value="REVISAR">REVISAR</option>
+            <option value="PENDIENTE">Pendiente de validación</option>
+            <option value="DEFECTO_PREDICHO">Defecto predicho</option>
             <option value="PASS">Histórico sin verificar</option>
           </select>
         </label>

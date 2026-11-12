@@ -15,7 +15,7 @@ export function Metrics({ stats }: { stats?: Stats }) {
       label: "Inspecciones registradas",
       value: stats?.total_inspected,
       icon: Layers,
-      note: "Eventos de captura manual",
+      note: "Capturas del detector de superficies",
     },
     {
       label: "Con hallazgos",

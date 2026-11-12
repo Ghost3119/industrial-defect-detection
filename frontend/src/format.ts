@@ -1,5 +1,8 @@
 import type { HistoryRow } from "./types";
 const names: Record<string, string> = {
+  ok: "OK",
+  falta_embutido_material: "Falta de embutido y material",
+  ruptura_deformacion: "Ruptura y deformación",
   crazing: "Grietas superficiales",
   inclusion: "Inclusiones",
   patches: "Manchas o parches",
@@ -12,12 +15,11 @@ export const defectName = (name: string | null) =>
 export const severityName = (name: string | null) =>
   ({ MINOR: "Leve", MAJOR: "Moderada", CRITICAL: "Alta" })[name || ""] ||
   "Sin estimar";
-export const statusName = (status: string) =>
-  status === "FAIL"
-    ? "Con hallazgos"
-    : status === "NO_DETECTIONS"
-      ? "Sin detecciones"
-      : "Histórico sin verificar";
+const statuses: Record<string, string> = {
+  FAIL: "Con hallazgos", NO_DETECTIONS: "Sin detecciones", PASS: "Histórico sin verificar",
+  REVISAR: "REVISAR", PENDIENTE: "Pendiente de validación", DEFECTO_PREDICHO: "Defecto predicho",
+};
+export const statusName = (status: string) => statuses[status] || "Histórico sin verificar";
 export const num = (value?: number | null, digits = 0) =>
   value == null
     ? "—"
@@ -47,7 +49,7 @@ export function filterHistory(
       (!status || row.status === status) &&
       (!from || day >= from) &&
       (!to || day <= to) &&
-      `${row.id} ${defectName(row.primary_defect)} ${row.primary_defect || ""} ${statusName(row.status)}`
+      `${row.id} ${defectName(row.classification?.predicted || row.primary_defect)} ${row.primary_defect || ""} ${statusName(row.status)}`
         .toLocaleLowerCase("es")
         .includes(search.toLocaleLowerCase("es"))
     );
