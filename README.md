@@ -194,7 +194,7 @@ Sin `model/best.pt`, las páginas abren y `/health` devuelve `model_loaded: fals
 `/detect` y `/upload` responden **503** con instrucciones, sin inventar ni guardar resultados.
 Coloca pesos de defectos ya entrenados y de confianza en esa ruta y reinicia el servidor para
 habilitar inferencia. Pesos inválidos o incompatibles producen un error al arrancar.
-No ejecutes `training/train.py` en esta fase.
+Para experimentos de entrenamiento aislados consulta [el pipeline público](docs/public-dataset-training.md).
 
 Con los pesos y el servidor disponibles, usa una segunda terminal:
 

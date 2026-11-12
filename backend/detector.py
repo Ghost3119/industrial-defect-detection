@@ -66,7 +66,7 @@ class DefectDetector:
         names = list(self.class_names.values())
         if self.model.task != "detect" or len(names) != len(DEFECT_CLASSES) or set(names) != set(DEFECT_CLASSES):
             raise ValueError(
-                "Incompatible model: expected a detection model with the six NEU-DET classes "
+                "Incompatible model: expected a detection model with the configured defect classes "
                 f"{DEFECT_CLASSES}; got task={self.model.task}, classes={names}. "
                 "Generic COCO weights are not a defect detector."
             )
