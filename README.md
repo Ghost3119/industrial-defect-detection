@@ -1,5 +1,3 @@
-> **Inicio con un comando (PowerShell):** ejecuta `.\iniciar.ps1` desde la raíz del proyecto. Prepara el frontend y sirve toda la aplicación con FastAPI. Requiere el entorno `.venv`, Node.js y pesos existentes. [Opciones de inicio](docs/frontend-redesign.md#inicio-con-un-comando).
->
 > **Frontend renovado:** React + TypeScript + Vite. Para compilar, iniciar y validar la interfaz actual, consulta [la guía del frontend](docs/frontend-redesign.md). Las secciones de validación anterior documentan fases históricas.
 
 # Acero Cifrado — inspección visual de piezas metálicas
@@ -13,6 +11,32 @@ No incluye entrenamiento nuevo, ESP32 ni controles de motores.
 captura sin ellos. En esta fase se validó un modelo de defectos de terceros, identificado
 en la sección de inferencia; no se presenta como el modelo original de Hvora2005.
 Una vista previa nunca devuelve PASS/FAIL ni registra inspecciones.
+
+## Arrancar el proyecto con un comando
+
+Con el entorno `.venv`, Node.js y los pesos del modelo preparados, abre PowerShell
+en la raíz del proyecto y ejecuta:
+
+```powershell
+.\iniciar.ps1
+```
+
+El comando comprueba el entorno y CUDA, instala las dependencias del frontend si
+hacen falta, compila la interfaz y arranca FastAPI con toda la aplicación.
+Si ya hay una instancia con el mismo frontend en el puerto, muestra su dirección
+sin iniciar otra.
+
+Abre **[http://127.0.0.1:8000](http://127.0.0.1:8000)**. Para detener el servidor que
+iniciaste, pulsa **Ctrl+C** en esa terminal.
+
+Para usar otro puerto o seleccionar CPU:
+
+```powershell
+.\iniciar.ps1 -Puerto 8001 -Dispositivo cpu
+```
+
+Consulta la [preparación inicial y las opciones de inicio](docs/frontend-redesign.md#inicio-con-un-comando)
+si faltan dependencias, pesos o Windows bloquea la ejecución del script.
 
 ## Repositorio del equipo y origen
 
