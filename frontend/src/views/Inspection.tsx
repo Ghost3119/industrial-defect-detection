@@ -45,6 +45,7 @@ export function Inspection({
   const input = useRef<HTMLInputElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const running = !!camera.data?.running;
+  const modelReady = camera.options.mode === "clasificador" ? runtime?.classifier_loaded : runtime?.model_loaded;
   const session = useMemo(() => (running ? Date.now() : 0), [running]);
   function stopLocal() {
     localRequest.current += 1;
@@ -149,6 +150,7 @@ export function Inspection({
         endpoint,
         camera.options.conf,
         camera.options.device,
+        camera.options.mode,
       );
       if (endpoint === "/preview")
         setPreview(`data:image/jpeg;base64,${data.annotated_image}`);
@@ -180,7 +182,7 @@ export function Inspection({
       window.clearInterval(timer);
     };
     // Camera settings are captured explicitly for each preview cycle.
-  }, [live, localRunning, camera.options.conf, camera.options.device]);
+  }, [live, localRunning, camera.options.conf, camera.options.device, camera.options.mode]);
   const active = mode === "usb" ? running : localRunning;
   const canCapture =
     mode === "usb" ? camera.data?.state === "running" : localRunning;
@@ -231,7 +233,7 @@ export function Inspection({
             {mode === "usb" && running && (
               <img
                 src={`/camera/stream?session=${session}`}
-                alt="Vista previa de la cámara USB con detecciones"
+                alt={camera.options.mode === "clasificador" ? "Vista previa de piezas estampadas" : "Vista previa de la cámara USB con detecciones"}
                 onError={() =>
                   setError(
                     "No se recibe la vista previa. Revisa el estado de la cámara y vuelve a iniciarla.",
@@ -319,7 +321,7 @@ export function Inspection({
                     opening ||
                     !!camera.busy ||
                     (mode === "usb" &&
-                      (!runtime?.model_loaded || !camera.sources.length))
+                      (!modelReady || !camera.sources.length))
                   }
                   onClick={() =>
                     mode === "usb" ? void camera.start() : void startLocal()
@@ -343,7 +345,7 @@ export function Inspection({
               <button
                 className="button primary"
                 disabled={
-                  !canCapture || busy || !!camera.busy || !runtime?.model_loaded
+                  !canCapture || busy || !!camera.busy || !modelReady
                 }
                 onClick={() => void capture()}
               >
@@ -355,7 +357,7 @@ export function Inspection({
             </div>
             <button
               className="button ghost"
-              disabled={busy || !runtime?.model_loaded}
+              disabled={busy || !modelReady}
               onClick={() => input.current?.click()}
             >
               <Upload size={16} />

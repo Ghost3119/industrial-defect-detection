@@ -5,7 +5,10 @@
 Adaptación universitaria de [Hvora2005/industrial-defect-detection](https://github.com/Hvora2005/industrial-defect-detection).
 Incluye captura por webcam y archivos locales, inferencia CPU/CUDA y registro manual de
 inspecciones en Windows. Conserva teléfono, FastAPI, YOLO11, monitor e historial originales.
-No incluye entrenamiento nuevo, ESP32 ni controles de motores.
+La estación permite elegir entre el detector de defectos superficiales y el clasificador
+experimental de tres piezas estampadas. La [guía del prototipo](docs/clasificador-estampado.md)
+incluye los pesos esperados, el entrenamiento reproducible, los errores observados y la
+prueba con webcam para el hackatón.
 
 **El clon no incluye los pesos entrenados del autor ni el dataset.** Es posible probar la
 captura sin ellos. En esta fase se validó un modelo de defectos de terceros, identificado
@@ -224,7 +227,7 @@ Sin `model/best.pt`, las páginas abren y `/health` devuelve `model_loaded: fals
 `/detect` y `/upload` responden **503** con instrucciones, sin inventar ni guardar resultados.
 Coloca pesos de defectos ya entrenados y de confianza en esa ruta y reinicia el servidor para
 habilitar inferencia. Pesos inválidos o incompatibles producen un error al arrancar.
-No ejecutes `training/train.py` en esta fase.
+Para experimentos de entrenamiento aislados consulta [el pipeline público](docs/public-dataset-training.md).
 
 Con los pesos y el servidor disponibles, usa una segunda terminal:
 

@@ -8,7 +8,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = Path(os.environ.get("ACERO_MODEL_PATH", str(PROJECT_ROOT / "model" / "best.pt")))
 if not MODEL_PATH.is_absolute():
     MODEL_PATH = PROJECT_ROOT / MODEL_PATH
-DEFECT_CLASSES = ("crazing", "inclusion", "patches", "pitted_surface", "rolled-in_scale", "scratches")
+DATASET_PROFILES = {
+    "neu-det": ("crazing", "inclusion", "patches", "pitted_surface", "rolled-in_scale", "scratches"),
+    "cr7-det": ("inclusion", "dents", "oil_spots", "pits", "punching", "linear", "macular"),
+}
+DATASET_PROFILE = os.environ.get("ACERO_DATASET_PROFILE", "neu-det")
+if DATASET_PROFILE not in DATASET_PROFILES:
+    raise ValueError(f"Unknown ACERO_DATASET_PROFILE: {DATASET_PROFILE}")
+DEFECT_CLASSES = DATASET_PROFILES[DATASET_PROFILE]
 
 # Inference settings
 CONF_THRESHOLD = 0.4   # matches the threshold used in Phase 4 testing

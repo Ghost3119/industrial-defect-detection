@@ -7,6 +7,7 @@ import type {
   Device,
   Health,
   HistoryRow,
+  ModelMode,
   Runtime,
   Stats,
 } from "../types";
@@ -68,6 +69,7 @@ export const api = {
       fps: o.fps,
       conf: o.conf,
       device: o.device,
+      ...(o.mode === "clasificador" && { mode: o.mode, review_threshold: o.conf }),
     }),
   stop: () => post<CameraState>("/camera/stop", {}),
   confidence: (conf: number) => post<CameraState>("/camera/settings", { conf }),
@@ -85,10 +87,12 @@ export const api = {
     endpoint: "/preview" | "/detect" | "/upload",
     conf: number,
     device: Device,
+    mode: ModelMode = "detector",
   ) => {
     const form = new FormData();
     form.append("file", file, "inspection.jpg");
-    return request<Detection>(`${endpoint}?conf=${conf}&device=${device}`, {
+    const selection = mode === "clasificador" ? `&mode=clasificador&review_threshold=${conf}` : "";
+    return request<Detection>(`${endpoint}?conf=${conf}&device=${device}${selection}`, {
       method: "POST",
       body: form,
     });

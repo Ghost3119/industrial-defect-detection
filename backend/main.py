@@ -12,10 +12,13 @@ Endpoints:
     WS   /ws/monitor     -> pushes every detection result to connected laptop consoles
 """
 
+import base64
+import logging
+import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 import re
 import time
 
@@ -35,10 +38,23 @@ from capture import CaptureError, list_cameras
 from runtime import resolve_device, runtime_status
 from database import save_inspection, get_recent_inspections, get_stats, get_trend
 from reports import build_csv, build_pdf
+from stamped_classifier import StampedClassifier
+from stamped_input import REVIEW_THRESHOLD
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 detector = DefectDetector() if MODEL_PATH.is_file() else None
 CAPTURE_DIR = PROJECT_ROOT / "outputs" / "captures"
+
+
+
+ModelMode = Literal["detector", "clasificador"]
+classifier_path = PROJECT_ROOT / os.environ.get("ACERO_CLASSIFIER_PATH", "outputs/stamped-v1/full/weights/best.pt")
+classifier = None
+if classifier_path.is_file():
+    try:
+        classifier = StampedClassifier(classifier_path)
+    except Exception:
+        logging.getLogger(__name__).exception("No se pudo cargar el clasificador %s", classifier_path)
 
 
 def camera_predict(frame, conf, device):
@@ -125,47 +141,72 @@ def health():
 
 
 async def _inspect(image_bgr: np.ndarray, conf: float = CONF_THRESHOLD,
-                   device: str = INFERENCE_DEVICE, record: bool = True) -> dict:
-    if detector is None:
+                   device: str = INFERENCE_DEVICE, record: bool = True, mode: ModelMode = "detector") -> dict:
+    selected_model = classifier if mode == "clasificador" else detector
+    if mode == "clasificador" and selected_model is None:
+        raise HTTPException(status_code=503, detail="Clasificador de estampado no disponible")
+    if selected_model is None:
         raise HTTPException(
             status_code=503,
             detail=f"Defect model missing: {MODEL_PATH}. Supply existing trained weights and "
                    "restart the server. Use capture.py --preview-only for capture tests.",
         )
     try:
-        result = await run_in_threadpool(detector.predict, image_bgr, conf=conf, device=device)
+        result = await run_in_threadpool(selected_model.predict, image_bgr, conf=conf, device=device)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     if record:
-        save_inspection(result)
+        if mode == "clasificador":
+            await run_in_threadpool(record_classified_image, result)
+        else:
+            save_inspection(result)
         await broadcast_to_monitors(result)
     return result
 
 
+def record_classified_image(result):
+    """Link the displayed whole-frame JPEG to the history record."""
+    CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+    photo = CAPTURE_DIR / f"{uuid4()}_original.jpg"
+    data = base64.b64decode(result["annotated_image"], validate=True)
+    stream = photo.open("xb")
+    try:
+        with stream:
+            stream.write(data)
+        result["captures"] = {"original_url": f"/captures/{photo.name}"}
+        save_inspection(result)
+    except Exception:
+        photo.unlink(missing_ok=True)
+        raise
+
+
 @app.post("/detect")
 async def detect(file: UploadFile = File(...), conf: float = Query(CONF_THRESHOLD, ge=0, le=1),
-                 device: Literal["auto", "cpu", "cuda"] = INFERENCE_DEVICE):
+                 device: Literal["auto", "cpu", "cuda"] = INFERENCE_DEVICE,
+                 mode: ModelMode = "detector", review_threshold: float = Query(REVIEW_THRESHOLD, ge=0, le=1)):
     """Used for phone frames and the OpenCV capture client."""
-    return await _inspect(await _read_image_from_upload(file), conf, device)
+    return await _inspect(await _read_image_from_upload(file), review_threshold if mode == "clasificador" else conf, device, mode=mode)
 
 
 @app.post("/upload")
 async def upload(file: UploadFile = File(...), conf: float = Query(CONF_THRESHOLD, ge=0, le=1),
-                 device: Literal["auto", "cpu", "cuda"] = INFERENCE_DEVICE):
+                 device: Literal["auto", "cpu", "cuda"] = INFERENCE_DEVICE,
+                 mode: ModelMode = "detector", review_threshold: float = Query(REVIEW_THRESHOLD, ge=0, le=1)):
     """Used for gallery image uploads. Same processing as /detect."""
-    return await _inspect(await _read_image_from_upload(file), conf, device)
+    return await _inspect(await _read_image_from_upload(file), review_threshold if mode == "clasificador" else conf, device, mode=mode)
 
 
 @app.post("/preview")
 async def preview(file: UploadFile = File(...), conf: float = Query(CONF_THRESHOLD, ge=0, le=1),
-                  device: Literal["auto", "cpu", "cuda"] = INFERENCE_DEVICE):
+                  device: Literal["auto", "cpu", "cuda"] = INFERENCE_DEVICE,
+                 mode: ModelMode = "detector", review_threshold: float = Query(REVIEW_THRESHOLD, ge=0, le=1)):
     """Live frames are predictions, not additional pieces or inspection records."""
-    return await _inspect(await _read_image_from_upload(file), conf, device, record=False)
+    return await _inspect(await _read_image_from_upload(file), review_threshold if mode == "clasificador" else conf, device, record=False, mode=mode)
 
 
 @app.get("/runtime")
 def runtime():
-    return {**runtime_status(), "model_loaded": detector is not None,
+    return {**runtime_status(), "classifier_loaded": classifier is not None, "model_loaded": detector is not None,
             "requested_device": getattr(detector, "requested_device", INFERENCE_DEVICE),
             "active_device": getattr(detector, "_device", None)}
 
@@ -180,6 +221,8 @@ def cameras(max_index: int = Query(5, ge=0, le=16), backend: Literal["auto", "ds
 
 
 class CameraStart(BaseModel):
+    mode: ModelMode = "detector"
+    review_threshold: float = Field(REVIEW_THRESHOLD, ge=0, le=1, allow_inf_nan=False)
     source_type: Literal["camera", "demo"] = "camera"
     camera_index: int = Field(0, ge=0, le=32)
     backend: Literal["auto", "dshow", "msmf"] = "auto"
@@ -192,15 +235,17 @@ class CameraStart(BaseModel):
 
 @app.post("/camera/start")
 def start_camera(options: CameraStart):
-    if detector is None:
-        raise HTTPException(status_code=503, detail="Model missing. Configure ACERO_MODEL_PATH and restart.")
+    use_classifier = options.mode == "clasificador"
+    if (classifier if use_classifier else detector) is None:
+        raise HTTPException(status_code=503, detail="Clasificador no disponible. Configura ACERO_CLASSIFIER_PATH." if use_classifier else "Model missing. Configure ACERO_MODEL_PATH and restart.")
     try:
         resolve_device(options.device)  # Explicit CUDA must fail before opening a source.
         source = options.camera_index if options.source_type == "camera" else DEMO_VIDEO
         if isinstance(source, Path) and not source.is_file():
             raise CaptureError("Demo video missing. Run tools/create_test_media.py first.")
         return camera.start(source, backend=options.backend, width=options.width, height=options.height,
-                            fps=options.fps, conf=options.conf, device=options.device,
+                            fps=options.fps, conf=options.review_threshold if use_classifier else options.conf, device=options.device,
+                            **({"predictor": classifier.predict, "mode": options.mode} if use_classifier else {}),
                             loop=options.source_type == "demo")
     except (CaptureError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -6,6 +6,7 @@ test("compiled frontend against isolated real FastAPI, YOLO and CUDA", async ({
 }) => {
   const runtime = await (await request.get("/runtime")).json();
   expect(runtime.model_loaded).toBe(true);
+  const before = (await (await request.get("/stats")).json()).total_inspected;
   await page.goto("/");
   await expect(
     page.getByText("Sistema conectado", { exact: true }),
@@ -25,7 +26,7 @@ test("compiled frontend against isolated real FastAPI, YOLO and CUDA", async ({
       { timeout: 30000 },
     )
     .toBeGreaterThan(2);
-  expect((await (await request.get("/stats")).json()).total_inspected).toBe(0);
+  expect((await (await request.get("/stats")).json()).total_inspected).toBe(before);
   await expect(
     page.getByRole("img", {
       name: "Vista previa de la cámara USB con detecciones",
@@ -43,7 +44,7 @@ test("compiled frontend against isolated real FastAPI, YOLO and CUDA", async ({
     .poll(
       async () => (await (await request.get("/stats")).json()).total_inspected,
     )
-    .toBe(1);
+    .toBe(before + 1);
   const original = await page
     .getByRole("link", { name: "Imagen original" })
     .getAttribute("href");
@@ -78,6 +79,38 @@ test("compiled frontend against isolated real FastAPI, YOLO and CUDA", async ({
     .getByRole("link", { name: "Historial", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Ver inspección 1", exact: true }),
+    page.getByRole("button", { name: /Ver inspección/ }).first(),
   ).toBeVisible();
+});
+
+test("stamped model captures a frame on GPU and restores its scores from history", async ({ page, request }) => {
+  const runtime = await (await request.get("/runtime")).json();
+  test.skip(!runtime.classifier_loaded, "Se requieren los pesos del prototipo");
+  const before = (await (await request.get("/stats")).json()).total_inspected;
+  await page.goto("/");
+  await page.getByLabel("Modelo de inspección").selectOption("clasificador");
+  await expect(page.getByLabel("Umbral de confianza", { exact: true })).toHaveValue("0.9");
+  await page.getByRole("button", { name: "Buscar cámaras" }).click();
+  await page.getByLabel("Fuente de cámara").selectOption("demo");
+  await page.getByLabel("Dispositivo de inferencia").selectOption("cuda");
+  await page.getByRole("button", { name: "Iniciar cámara", exact: true }).click();
+  try {
+    const capture = page.getByRole("button", { name: "Capturar e inspeccionar" });
+    await expect(capture).toBeEnabled({ timeout: 20000 });
+    await capture.click();
+    await expect(page.getByText("YOLO11n-cls estampadas", { exact: true })).toBeVisible();
+    await expect(page.getByAltText("Pieza estampada inspeccionada")).toBeVisible();
+    const [latest] = (await (await request.get("/history")).json()).inspections;
+    expect(Object.keys(latest.classification.scores).sort()).toEqual(["falta_embutido_material", "ok", "ruptura_deformacion"]);
+    expect(latest.classification.device).toBe("cuda:0");
+    expect(latest.classification.inference_ms).toBeGreaterThan(0);
+    expect((await request.get(latest.classification.captures.original_url)).status()).toBe(200);
+    expect((await (await request.get("/stats")).json()).total_inspected).toBe(before);
+    await page.goto("/#historial");
+    await page.getByRole("button", { name: `Ver inspección ${latest.id}`, exact: true }).click();
+    await expect(page.getByRole("dialog").getByText(latest.classification.model)).toBeVisible();
+    await expect(page.getByRole("dialog").getByAltText("Pieza estampada inspeccionada")).toBeVisible();
+  } finally {
+    await request.post("/camera/stop");
+  }
 });

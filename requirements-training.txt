@@ -1,0 +1,3 @@
+# Reproduced experiment; install CUDA torch separately with requirements-cuda.txt.
+-r requirements-dev.txt
+ultralytics==8.4.210

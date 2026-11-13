@@ -15,6 +15,14 @@ model/*.pt
 runs/
 training/runs/
 yolo11n.pt
+*.pt
+*.onnx
+*.engine
+datasets/
+checkpoints/
+results/
+*.zip.partial
+CR7-DET-main.zip
 
 # Outputs
 outputs/*

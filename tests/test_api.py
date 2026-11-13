@@ -61,6 +61,29 @@ def test_health_without_weights_and_detection_503(client, monkeypatch, jpeg):
     assert client.get("/stats").json()["total_inspected"] == 0
 
 
+def test_classified_upload_keeps_scores_and_photo_without_changing_detector_stats(client, monkeypatch, jpeg, tmp_path):
+    class Classifier:
+        def predict(self, frame, conf, device):
+            return {"status": "REVISAR", "defects": [], "defects_found": 0, "severity": None,
+                    "classification": {"predicted": "ok", "review_threshold": conf,
+                                       "scores": {"ok": .6, "falta_embutido_material": .3, "ruptura_deformacion": .1}},
+                    "annotated_image": base64.b64encode(jpeg).decode()}
+
+    monkeypatch.setattr(main, "classifier", Classifier())
+    monkeypatch.setattr(main, "CAPTURE_DIR", tmp_path / "captures")
+    client.post("/detect", files={"file": jpeg}).raise_for_status()
+    original = client.get("/history").json()["inspections"][0]
+    stats = client.get("/stats").json()
+    assert client.post("/preview?mode=clasificador", files={"file": jpeg}).is_success
+    assert not main.CAPTURE_DIR.exists()
+    client.post("/upload?mode=clasificador", files={"file": jpeg}).raise_for_status()
+    row, old = client.get("/history").json()["inspections"]
+    assert old == original and client.get("/stats").json() == stats
+    assert row["classification"]["review_threshold"] == .90
+    assert row["classification"]["scores"]["ok"] == .6 and row["status"] == "REVISAR"
+    assert client.get(row["classification"]["captures"]["original_url"]).content == jpeg
+
+
 @pytest.mark.parametrize("endpoint", ["/detect", "/upload"])
 def test_existing_upload_routes_persist_and_broadcast(client, jpeg, endpoint):
     assert client.get("/health").json()["model_loaded"] is True

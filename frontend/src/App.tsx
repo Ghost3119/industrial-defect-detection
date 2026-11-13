@@ -274,7 +274,7 @@ export default function App() {
               retry={() => void health.reload()}
             />
           )}
-          {health.data && !health.data.model_loaded && (
+          {health.data && !health.data.model_loaded && !runtime.data?.classifier_loaded && (
             <div className="notice warning">
               <Activity size={18} />
               <span>
