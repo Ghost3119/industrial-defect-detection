@@ -3,6 +3,7 @@ import type {
   CameraList,
   CameraOptions,
   CameraState,
+  ConveyorState,
   Detection,
   Device,
   Health,
@@ -38,6 +39,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body: unknown = await response.json().catch(() => null);
     const detail =
       body && typeof body === "object" && "detail" in body ? body.detail : null;
+    if (response.status === 404 && path.startsWith("/conveyor/"))
+      throw new ApiError(404, "El servidor no tiene disponibles las rutas del ESP32. Reinicia el backend actualizado y recarga la página.");
     throw new ApiError(
       response.status,
       typeof detail === "string"
@@ -69,9 +72,17 @@ export const api = {
       fps: o.fps,
       conf: o.conf,
       device: o.device,
+      ...(o.auto_interval_s !== undefined && { auto_interval_s: o.auto_interval_s }),
+      ...(o.use_conveyor !== undefined && { use_conveyor: o.use_conveyor }),
+      ...(o.conveyor_speed !== undefined && { conveyor_speed: o.conveyor_speed }),
       ...(o.mode === "clasificador" && { mode: o.mode, review_threshold: o.conf }),
     }),
   stop: () => post<CameraState>("/camera/stop", {}),
+  conveyor: () => request<ConveyorState>("/conveyor/status"),
+  conveyorPorts: () => request<{ ports: { port: string; description: string }[] }>("/conveyor/ports"),
+  connectConveyor: (port: string) => post<ConveyorState>("/conveyor/connect", { port }),
+  disconnectConveyor: () => post<ConveyorState>("/conveyor/disconnect", {}),
+  stopConveyor: () => post<ConveyorState>("/conveyor/stop", {}),
   confidence: (conf: number) => post<CameraState>("/camera/settings", { conf }),
   capture: (request_id: string) =>
     post<Detection>("/camera/capture", { request_id }),

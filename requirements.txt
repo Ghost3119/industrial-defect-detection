@@ -22,5 +22,8 @@ sqlalchemy>=2.0.0
 # --- Local HTTPS cert for phone camera access (Phase 7) ---
 cryptography>=43.0.0
 
+# --- ESP32 USB serial (heartbeat independent of inference) ---
+pyserial>=3.5,<4
+
 # --- PDF report export (Phase 11) ---
 fpdf2>=2.7.0

@@ -20,6 +20,25 @@ export function CameraControls({
     <div className={`camera-settings ${compact ? "compact" : ""}`}>
       <div className="form-grid">
         <label>
+          Registro de inspecciones
+          <select value={options.auto_interval_s ? "automatic" : "manual"} disabled={locked}
+            onChange={(e) => {
+              const interval = e.currentTarget.value === "automatic" ? 2 : 0;
+              setOptions((o) => ({ ...o, auto_interval_s: interval }));
+            }}>
+            <option value="automatic">Automático por intervalo</option>
+            <option value="manual">Captura manual</option>
+          </select>
+        </label>
+        {!!options.auto_interval_s && <label>
+          Intervalo de inspección (segundos)
+          <input type="number" min="0.5" max="3600" step="0.5" value={options.auto_interval_s}
+            disabled={locked} required onChange={(e) => {
+              const value = Number(e.target.value);
+              if (value > 0) setOptions((o) => ({ ...o, auto_interval_s: value }));
+            }} />
+        </label>}
+        <label>
           Modelo de inspección
           <select value={options.mode || "detector"} disabled={locked} onChange={(e) => {
             const mode = e.target.value === "clasificador" ? "clasificador" : "detector";
@@ -157,6 +176,7 @@ export function CameraControls({
         </button>
       </div>
       <p className="microcopy">
+        {options.auto_interval_s ? "Se guarda una inspección por intervalo, incluso si la misma pieza sigue en cámara. " : ""}
         La resolución y los FPS efectivos dependen de la cámara. Detén la
         captura para cambiar de fuente o dispositivo.
       </p>

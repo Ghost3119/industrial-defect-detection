@@ -259,7 +259,7 @@ export default function App() {
             </div>
             <div className="session-label">
               <Circle size={8} fill="currentColor" />
-              {camera.data?.running ? "Cámara en captura" : "Registro manual"}
+              {camera.data?.running ? "Cámara en captura" : camera.options.auto_interval_s ? "Registro automático" : "Registro manual"}
             </div>
           </div>
           {runtime.error && (

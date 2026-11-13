@@ -170,8 +170,7 @@ export function ResultPanel({
     >
       {!result ? (
         <Empty title="Todo listo para inspeccionar">
-          Inicia la cámara y captura una pieza. La vista previa no registra
-          inspecciones.
+          Inicia la cámara para inspeccionar automáticamente o selecciona captura manual en los parámetros.
         </Empty>
       ) : result.classification ? (
         <>

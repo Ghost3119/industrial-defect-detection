@@ -10,6 +10,7 @@ import {
   Upload,
 } from "lucide-react";
 import { CameraControls } from "../components/CameraControls";
+import { ConveyorControls } from "../components/ConveyorControls";
 import { ErrorNotice, ResultPanel } from "../components/Common";
 import type { CameraController } from "../hooks/useCamera";
 import type { Detection, Runtime } from "../types";
@@ -91,6 +92,7 @@ export function Inspection({
       video.current.srcObject = acquired;
       setLocalRunning(true);
       await video.current.play();
+      setLive(true);
     } catch (e) {
       if (token !== localRequest.current) return;
       const messages: Record<string, string> = {
@@ -144,6 +146,7 @@ export function Inspection({
     lock.current = true;
     setBusy(true);
     setError("");
+    const token = localRequest.current;
     try {
       const data = await api.image(
         file,
@@ -152,12 +155,13 @@ export function Inspection({
         camera.options.device,
         camera.options.mode,
       );
-      if (endpoint === "/preview")
+      if (token !== localRequest.current) return;
+      if (endpoint === "/preview" || (endpoint === "/detect" && mode === "browser"))
         setPreview(`data:image/jpeg;base64,${data.annotated_image}`);
-      else onResult(data, file);
+      if (endpoint !== "/preview") onResult(data, file);
     } catch (e) {
       setError(errorMessage(e));
-      if (endpoint === "/preview") setLive(false);
+      setLive(false);
     } finally {
       lock.current = false;
       setBusy(false);
@@ -170,19 +174,19 @@ export function Inspection({
       if (!lock.current)
         void frame()
           .then((blob) => {
-            if (!disposed) void inspect(blob, "/preview");
+            if (!disposed) void inspect(blob, camera.options.auto_interval_s ? "/detect" : "/preview");
           })
           .catch((e) => {
             setError(String(e));
             setLive(false);
           });
-    }, 2000);
+    }, (camera.options.auto_interval_s || 2) * 1000);
     return () => {
       disposed = true;
       window.clearInterval(timer);
     };
     // Camera settings are captured explicitly for each preview cycle.
-  }, [live, localRunning, camera.options.conf, camera.options.device, camera.options.mode]);
+  }, [live, localRunning, camera.options.conf, camera.options.device, camera.options.mode, camera.options.auto_interval_s]);
   const active = mode === "usb" ? running : localRunning;
   const canCapture =
     mode === "usb" ? camera.data?.state === "running" : localRunning;
@@ -252,7 +256,7 @@ export function Inspection({
               <img
                 className="preview-overlay"
                 src={preview}
-                alt="Vista previa analizada sin registrar"
+                alt={camera.options.auto_interval_s ? "Última inspección automática del dispositivo" : "Vista previa analizada sin registrar"}
               />
             )}
             {!active && (
@@ -266,13 +270,13 @@ export function Inspection({
                     ? "Conecta una cámara USB y selecciona la fuente para comenzar."
                     : "Usa la cámara de este teléfono o computadora."}
                 </p>
-                <span>Vista previa sin registro automático</span>
+                <span>{camera.options.auto_interval_s ? "Inspección automática al iniciar la cámara" : "Vista previa con captura manual"}</span>
               </div>
             )}
             <div className="viewport-label">
               <span className={`live-indicator ${active ? "active" : ""}`}>
                 <Circle size={7} fill="currentColor" />
-                {active ? "Vista previa" : "Cámara detenida"}
+                {active ? (camera.options.auto_interval_s ? "Inspección automática" : "Vista previa") : "Cámara detenida"}
               </span>
               <span>{mode === "usb" ? "OpenCV" : "Cámara del navegador"}</span>
             </div>
@@ -342,7 +346,7 @@ export function Inspection({
                   Detener
                 </button>
               )}
-              <button
+              {!camera.options.auto_interval_s && <button
                 className="button primary"
                 disabled={
                   !canCapture || busy || !!camera.busy || !modelReady
@@ -353,7 +357,8 @@ export function Inspection({
                 {camera.busy === "capture" || busy
                   ? "Procesando…"
                   : "Capturar e inspeccionar"}
-              </button>
+              </button>}
+              {!!camera.options.auto_interval_s && active && <span role="status">Registro automático · cada {camera.options.auto_interval_s} s</span>}
             </div>
             <button
               className="button ghost"
@@ -386,14 +391,15 @@ export function Inspection({
                   setPreview("");
                 }}
               />
-              Analizar vista previa cada 2 segundos · no registra inspecciones
+              {camera.options.auto_interval_s ? "Inspección automática activa" : "Analizar vista previa cada 2 segundos · no registra inspecciones"}
             </label>
           )}
           <div className="preview-note">
             <CameraOff size={15} />
             <p>
-              La vista previa no suma inspecciones. Captura una sola vez por
-              pieza para registrar el resultado.
+              {camera.options.auto_interval_s
+                ? `Se guarda un resultado cada ${camera.options.auto_interval_s} segundos, según el tiempo de procesamiento. La misma pieza puede generar varios registros.`
+                : "La vista previa no suma inspecciones. Captura una sola vez por pieza para registrar el resultado."}
             </p>
           </div>
           {(error ||
@@ -424,6 +430,7 @@ export function Inspection({
         </summary>
         <CameraControls camera={camera} runtime={runtime} compact />
       </details>
+      {mode === "usb" && <ConveyorControls camera={camera} />}
     </>
   );
 }

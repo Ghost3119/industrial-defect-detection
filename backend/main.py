@@ -13,9 +13,11 @@ Endpoints:
 """
 
 import base64
+import asyncio
 import logging
 import os
 from pathlib import Path
+from ipaddress import ip_address
 from contextlib import asynccontextmanager
 from typing import Literal
 from uuid import UUID, uuid4
@@ -24,7 +26,7 @@ import time
 
 import numpy as np
 import cv2
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +36,7 @@ from pydantic import BaseModel, Field
 from detector import DefectDetector
 from config import CONF_THRESHOLD, DEMO_VIDEO, INFERENCE_DEVICE, MODEL_PATH, PROJECT_ROOT
 from camera import CameraSession
+from conveyor import ConveyorSession, ConveyorError, serial_ports
 from capture import CaptureError, list_cameras
 from runtime import resolve_device, runtime_status
 from database import save_inspection, get_recent_inspections, get_stats, get_trend
@@ -63,13 +66,22 @@ def camera_predict(frame, conf, device):
     return detector.predict(frame, conf=conf, device=device)
 
 
-camera = CameraSession(camera_predict, CAPTURE_DIR)
+camera = CameraSession(camera_predict, CAPTURE_DIR, record=save_inspection)
+conveyor = ConveyorSession(hardware_confirmed=os.environ.get("ACERO_CONVEYOR_HARDWARE_CONFIRMED") == "1")
 
 
 @asynccontextmanager
 async def lifespan(app):
-    yield
-    await run_in_threadpool(camera.stop)
+    loop = asyncio.get_running_loop()
+    camera.on_record = lambda result: asyncio.run_coroutine_threadsafe(broadcast_to_monitors(result), loop)
+    try:
+        yield
+    finally:
+        try:
+            await run_in_threadpool(camera.stop)
+        finally:
+            await run_in_threadpool(conveyor.disconnect)
+            camera.on_record = None
 
 app = FastAPI(title="AI Industrial Defect Detection API", lifespan=lifespan)
 
@@ -96,7 +108,8 @@ async def broadcast_to_monitors(result: dict):
         except Exception:
             dead_clients.append(client)
     for client in dead_clients:
-        monitor_clients.remove(client)
+        if client in monitor_clients:
+            monitor_clients.remove(client)
 
 
 async def _read_image_from_upload(file: UploadFile) -> np.ndarray:
@@ -221,6 +234,9 @@ def cameras(max_index: int = Query(5, ge=0, le=16), backend: Literal["auto", "ds
 
 
 class CameraStart(BaseModel):
+    auto_interval_s: float = Field(0, ge=0, le=3600, allow_inf_nan=False)
+    use_conveyor: bool = False
+    conveyor_speed: int = Field(25, ge=1, le=100)
     mode: ModelMode = "detector"
     review_threshold: float = Field(REVIEW_THRESHOLD, ge=0, le=1, allow_inf_nan=False)
     source_type: Literal["camera", "demo"] = "camera"
@@ -234,11 +250,15 @@ class CameraStart(BaseModel):
 
 
 @app.post("/camera/start")
-def start_camera(options: CameraStart):
+def start_camera(options: CameraStart, request: Request):
     use_classifier = options.mode == "clasificador"
     if (classifier if use_classifier else detector) is None:
         raise HTTPException(status_code=503, detail="Clasificador no disponible. Configura ACERO_CLASSIFIER_PATH." if use_classifier else "Model missing. Configure ACERO_MODEL_PATH and restart.")
     try:
+        if options.use_conveyor:
+            conveyor.require_motion()
+            if request.client is None or not ip_address(request.client.host).is_loopback:
+                raise ConveyorError("Inicia la banda desde la app en localhost en la computadora conectada al ESP32.")
         resolve_device(options.device)  # Explicit CUDA must fail before opening a source.
         source = options.camera_index if options.source_type == "camera" else DEMO_VIDEO
         if isinstance(source, Path) and not source.is_file():
@@ -246,6 +266,10 @@ def start_camera(options: CameraStart):
         return camera.start(source, backend=options.backend, width=options.width, height=options.height,
                             fps=options.fps, conf=options.review_threshold if use_classifier else options.conf, device=options.device,
                             **({"predictor": classifier.predict, "mode": options.mode} if use_classifier else {}),
+                            auto_interval_s=options.auto_interval_s, use_conveyor=options.use_conveyor,
+                            on_ready=(lambda: conveyor.run(options.conveyor_speed, camera_required=True)) if options.use_conveyor else None,
+                            on_frame=conveyor.touch_frame if options.use_conveyor else None,
+                            on_stop=conveyor.stop if options.use_conveyor else None,
                             loop=options.source_type == "demo")
     except (CaptureError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -271,6 +295,50 @@ class CameraSettings(BaseModel):
 @app.post("/camera/settings")
 def camera_settings(options: CameraSettings):
     return camera.set_confidence(options.conf)
+
+
+@app.get("/conveyor/status")
+def conveyor_status():
+    return conveyor.status()
+
+
+@app.get("/conveyor/ports")
+def conveyor_ports():
+    return {"ports": serial_ports()}
+
+
+class ConveyorConnect(BaseModel):
+    port: str = Field(min_length=1, max_length=128)
+
+
+@app.post("/conveyor/connect")
+def connect_conveyor(options: ConveyorConnect):
+    # Only detected physical ports; no serial URLs or arbitrary file paths.
+    if options.port not in {p["port"] for p in serial_ports()}:
+        raise HTTPException(status_code=409, detail="Puerto no disponible. Vuelve a buscar puertos USB.")
+    try:
+        return conveyor.connect(options.port)
+    except ConveyorError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/conveyor/disconnect")
+def disconnect_conveyor():
+    try:
+        return conveyor.disconnect()
+    except ConveyorError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/conveyor/stop")
+def stop_conveyor():
+    try:
+        if camera.status().get("use_conveyor"):
+            camera.stop()
+        conveyor.stop()
+        return conveyor.status()
+    except ConveyorError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/camera/stream")

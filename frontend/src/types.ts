@@ -74,6 +74,9 @@ export interface Health {
   classes: string[];
 }
 export interface CameraState {
+  auto_interval_s?: number;
+  use_conveyor?: boolean;
+  last_inspection?: Detection | null;
   mode?: ModelMode;
   state: string;
   running: boolean;
@@ -93,6 +96,9 @@ export interface CameraState {
   processing_fps?: number;
 }
 export interface CameraOptions {
+  auto_interval_s?: number;
+  use_conveyor?: boolean;
+  conveyor_speed?: number;
   mode?: ModelMode;
   source: string;
   backend: "auto" | "dshow" | "msmf";
@@ -101,6 +107,13 @@ export interface CameraOptions {
   fps: number;
   conf: number;
   device: Device;
+}
+export interface ConveyorState {
+  connected: boolean;
+  running: boolean;
+  port: string | null;
+  hardware_confirmed: boolean;
+  error?: string | null;
 }
 export interface CameraList {
   cameras: { index: number; name: string }[];

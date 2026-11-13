@@ -8,6 +8,7 @@ test("compiled frontend against isolated real FastAPI, YOLO and CUDA", async ({
   expect(runtime.model_loaded).toBe(true);
   const before = (await (await request.get("/stats")).json()).total_inspected;
   await page.goto("/");
+  await page.getByLabel("Registro de inspecciones").selectOption("manual");
   await expect(
     page.getByText("Sistema conectado", { exact: true }),
   ).toBeVisible();
@@ -89,6 +90,7 @@ test("stamped model captures a frame on GPU and restores its scores from history
   const before = (await (await request.get("/stats")).json()).total_inspected;
   await page.goto("/");
   await page.getByLabel("Modelo de inspección").selectOption("clasificador");
+  await page.getByLabel("Registro de inspecciones").selectOption("manual");
   await expect(page.getByLabel("Umbral de confianza", { exact: true })).toHaveValue("0.9");
   await page.getByRole("button", { name: "Buscar cámaras" }).click();
   await page.getByLabel("Fuente de cámara").selectOption("demo");

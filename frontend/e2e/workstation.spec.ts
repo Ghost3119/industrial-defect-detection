@@ -84,6 +84,9 @@ async function fixtures(
     return canvas.toDataURL("image/jpeg").split(",")[1];
   });
   let state = {
+    auto_interval_s: 0,
+    use_conveyor: false,
+    last_inspection: null as (typeof detection & { capture_id: string }) | null,
     state: "stopped",
     running: false,
     frames_processed: 0,
@@ -103,6 +106,8 @@ async function fixtures(
   const calls: { path: string; body: Record<string, unknown> }[] = [];
   let lost = false;
   const receipts = new Set<string>();
+  let lastAutomatic = 0;
+  let automaticCount = 0;
   await page.routeWebSocket("**/ws/monitor", () => {});
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
@@ -121,6 +126,8 @@ async function fixtures(
         "/camera/settings",
         "/camera/capture",
         "/camera/stream",
+        "/conveyor/status",
+        "/conveyor/ports",
         "/preview",
         "/detect",
         "/upload",
@@ -200,10 +207,12 @@ async function fixtures(
         demo_available: true,
       };
     if (name === "/camera/start") {
+      lastAutomatic = Date.now();
       state = {
         ...state,
         state: "running",
         running: true,
+        auto_interval_s: Number(body.auto_interval_s || 0),
         requested_device: String(body.device),
         confidence: Number(body.conf),
         source: String(body.camera_index),
@@ -219,7 +228,16 @@ async function fixtures(
       state.confidence = Number(body.conf);
       data = state;
     }
-    if (name === "/camera/status") data = state;
+    if (name === "/camera/status") {
+      if (state.running && state.auto_interval_s && Date.now() - lastAutomatic >= state.auto_interval_s * 1000) {
+        state.inspections_recorded += 1;
+        lastAutomatic = Date.now();
+        state.last_inspection = { ...detection, annotated_image: plate, capture_id: `auto-${++automaticCount}` };
+      }
+      data = state;
+    }
+    if (name === "/conveyor/status") data = { connected: false, running: false, port: null, error: null, hardware_confirmed: false };
+    if (name === "/conveyor/ports") data = { ports: [{ port: "COM5", description: "ESP32 fixture" }] };
     if (name === "/camera/capture") {
       const id = String(body.request_id);
       const duplicate = receipts.has(id);
@@ -329,6 +347,7 @@ test("camera controls use real contracts; capture retry is idempotent; preview d
 }, info) => {
   const calls = await fixtures(page);
   await page.goto("/static/");
+  await page.getByLabel("Registro de inspecciones").selectOption("manual");
   await page.getByRole("button", { name: "Buscar cámaras" }).click();
   await page.getByLabel("Fuente de cámara").selectOption("2");
   await page.getByLabel("Dispositivo de inferencia").selectOption("cuda");
@@ -382,6 +401,29 @@ test("camera controls use real contracts; capture retry is idempotent; preview d
     }),
   ).toHaveCount(0);
 });
+test("automatic inspection records by interval without capture and stops with camera", async ({ page }, info) => {
+  const calls = await fixtures(page);
+  await page.goto("/static/");
+  await expect(page.getByLabel("Registro de inspecciones")).toHaveValue("automatic");
+  await page.getByLabel("Intervalo de inspección (segundos)").fill("0.5");
+  await page.getByRole("button", { name: "Iniciar cámara", exact: true }).click();
+  await expect(page.getByText("Registro automático · cada 0.5 s")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Capturar e inspeccionar", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("img", { name: "Última inspección con detecciones anotadas" })).toBeVisible();
+  expect(calls.find((c) => c.path === "/camera/start")?.body).toMatchObject({ auto_interval_s: 0.5, use_conveyor: false });
+  expect(calls.filter((c) => c.path === "/camera/capture")).toHaveLength(0);
+  await expect(page.getByLabel("Intervalo de inspección (segundos)")).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: path.resolve(`../outputs/frontend-redesign/${info.project.name}-automatic.png`), fullPage: true });
+  await page.getByRole("button", { name: "Detener", exact: true }).click();
+  await expect(page.getByText("Registro automático · cada 0.5 s")).toHaveCount(0);
+  await page.locator("summary").filter({ hasText: "ESP32 y banda" }).click();
+  await expect(page.getByRole("checkbox", { name: /Mover la banda/ })).toBeDisabled();
+  await page.getByRole("button", { name: "Buscar ESP32" }).click();
+  await expect(page.getByLabel("Puerto USB del ESP32")).toHaveValue("COM5");
+  expect(calls.some((c) => c.path === "/conveyor/connect")).toBe(false);
+});
+
 test("empty state and missing model stay actionable without fake approval", async ({
   page,
 }) => {
@@ -413,6 +455,7 @@ test("browser camera preview is separate from capture and image upload", async (
 }) => {
   const calls = await fixtures(page);
   await page.goto("/static/");
+  await page.getByLabel("Registro de inspecciones").selectOption("manual");
   // Deterministic native MediaStream: Edge's OS fake camera can stall at 2×2.
   // This still exercises video playback, canvas capture, Blob upload and stop().
   await page.evaluate(() => {

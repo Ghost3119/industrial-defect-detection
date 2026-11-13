@@ -56,3 +56,16 @@ test("camera actions call stop and confidence endpoints with the selected value"
   expect(confidence).toHaveBeenCalledWith(0.77);
   expect(stop).toHaveBeenCalledTimes(1);
 });
+
+test("reattaches automatic mode and displays each recorded receipt once without manual capture", async () => {
+  const saved = { capture_id: "auto-1", status: "FAIL", defects_found: 0, defects: [], severity: null, annotated_image: "" };
+  vi.spyOn(api, "camera").mockResolvedValue({ ...state, auto_interval_s: 1.5, last_inspection: saved });
+  const capture = vi.spyOn(api, "capture");
+  const receive = vi.fn();
+  const { result } = renderHook(() => useCamera(receive));
+  await waitFor(() => expect(receive).toHaveBeenCalledWith(saved));
+  expect(result.current.options.auto_interval_s).toBe(1.5);
+  await act(() => result.current.reload());
+  expect(receive).toHaveBeenCalledTimes(1);
+  expect(capture).not.toHaveBeenCalled();
+});

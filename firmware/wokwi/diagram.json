@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "author": "Acero Cifrado",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 70, "left": 0, "attrs": {} },
+    { "type": "wokwi-led", "id": "in1", "top": 0, "left": 250, "attrs": { "color": "red", "label": "IN1 GPIO18" } },
+    { "type": "wokwi-led", "id": "in2", "top": 75, "left": 250, "attrs": { "color": "yellow", "label": "IN2 GPIO19" } },
+    { "type": "wokwi-led", "id": "in3", "top": 150, "left": 250, "attrs": { "color": "green", "label": "IN3 GPIO21" } },
+    { "type": "wokwi-led", "id": "in4", "top": 225, "left": 250, "attrs": { "color": "blue", "label": "IN4 GPIO22" } },
+    { "type": "wokwi-resistor", "id": "r1", "top": 30, "left": 180, "attrs": { "value": "1000" } },
+    { "type": "wokwi-resistor", "id": "r2", "top": 105, "left": 180, "attrs": { "value": "1000" } },
+    { "type": "wokwi-resistor", "id": "r3", "top": 180, "left": 180, "attrs": { "value": "1000" } },
+    { "type": "wokwi-resistor", "id": "r4", "top": 255, "left": 180, "attrs": { "value": "1000" } },
+    { "type": "wokwi-logic-analyzer", "id": "logic", "top": 70, "left": 400, "attrs": { "filename": "phases.vcd" } }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:18", "r1:1", "red", [] ],
+    [ "r1:2", "in1:A", "red", [] ],
+    [ "esp:19", "r2:1", "orange", [] ],
+    [ "r2:2", "in2:A", "orange", [] ],
+    [ "esp:21", "r3:1", "green", [] ],
+    [ "r3:2", "in3:A", "green", [] ],
+    [ "esp:22", "r4:1", "blue", [] ],
+    [ "r4:2", "in4:A", "blue", [] ],
+    [ "in1:C", "esp:GND.1", "black", [] ],
+    [ "in2:C", "esp:GND.1", "black", [] ],
+    [ "in3:C", "esp:GND.1", "black", [] ],
+    [ "in4:C", "esp:GND.1", "black", [] ],
+    [ "esp:18", "logic:D0", "red", [] ],
+    [ "esp:19", "logic:D1", "orange", [] ],
+    [ "esp:21", "logic:D2", "green", [] ],
+    [ "esp:22", "logic:D3", "blue", [] ],
+    [ "logic:GND", "esp:GND.1", "black", [] ]
+  ],
+  "serialMonitor": { "display": "always", "newline": "lf", "convertEol": true }
+}

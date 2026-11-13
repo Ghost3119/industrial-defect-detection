@@ -71,9 +71,15 @@ try {
             $sameApp = $false
             try {
                 $health = Invoke-RestMethod "$url/health" -TimeoutSec 3
+                $schema = Invoke-RestMethod "$url/openapi.json" -TimeoutSec 3
                 $page = Invoke-WebRequest "$url/" -UseBasicParsing -TimeoutSec 3
                 $localHtml = [IO.File]::ReadAllText((Join-Path $projectRoot 'frontend/dist/index.html'))
-                $sameApp = $health.status -eq 'ok' -and $page.Content.Trim() -eq $localHtml.Trim()
+                # An old Python process also serves the new HTML from disk.
+                # Verify its loaded API contract before reusing the listener.
+                $apiPaths = $schema.paths.PSObject.Properties.Name
+                $cameraFields = $schema.components.schemas.CameraStart.properties.PSObject.Properties.Name
+                $currentApi = '/conveyor/ports' -in $apiPaths -and '/conveyor/status' -in $apiPaths -and 'auto_interval_s' -in $cameraFields
+                $sameApp = $health.status -eq 'ok' -and $currentApi -and $page.Content.Trim() -eq $localHtml.Trim()
             } catch { $sameApp = $false }
             if (-not $sameApp) { throw "El puerto $Puerto esta ocupado por otro proceso o una version anterior. Deten esa instancia o usa -Puerto 8001. No se cerro ningun proceso." }
             Write-Host "`nAcero Cifrado ya esta funcionando: $url" -ForegroundColor Green

@@ -13,6 +13,9 @@ export function useCamera(onCapture: (result: Detection) => void) {
     fps: 30,
     conf: 0.4,
     device: "auto",
+    auto_interval_s: 2,
+    use_conveyor: false,
+    conveyor_speed: 25,
   });
   const [sources, setSources] = useState([{ value: "0", label: "Cámara 0" }]);
   const [busy, setBusy] = useState("");
@@ -21,6 +24,14 @@ export function useCamera(onCapture: (result: Detection) => void) {
   const pending = useRef<string | null>(null);
   const lock = useRef(false);
   const attached = useRef(false);
+  const lastReceipt = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const result = resource.data?.last_inspection;
+    if (result?.capture_id && result.capture_id !== lastReceipt.current) {
+      lastReceipt.current = result.capture_id;
+      onCapture(result);
+    }
+  }, [resource.data, onCapture]);
   useEffect(() => {
     const state = resource.data;
     if (state?.running && !attached.current) {
@@ -47,6 +58,8 @@ export function useCamera(onCapture: (result: Detection) => void) {
         mode: state.mode || "detector",
         device: state.requested_device,
         conf: state.confidence,
+        auto_interval_s: state.auto_interval_s ?? 0,
+        use_conveyor: state.use_conveyor ?? false,
         ...state.requested,
       }));
     }
@@ -105,7 +118,7 @@ export function useCamera(onCapture: (result: Detection) => void) {
     start: () =>
       action("start", async () => {
         await api.start(options);
-        setMessage("Iniciando vista previa. Espera el primer fotograma.");
+        setMessage(options.auto_interval_s ? "Iniciando inspección automática. Espera el primer fotograma." : "Iniciando vista previa. Espera el primer fotograma.");
       }),
     stop: () =>
       action("stop", async () => {
@@ -123,6 +136,7 @@ export function useCamera(onCapture: (result: Detection) => void) {
         try {
           const result = await api.capture(pending.current);
           pending.current = null;
+          lastReceipt.current = result.capture_id;
           onCapture(result);
           setMessage(
             result.duplicate

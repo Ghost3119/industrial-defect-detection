@@ -7,6 +7,7 @@ const routes = [
   "/runtime",
   "/cameras",
   "/camera",
+  "/conveyor",
   "/detect",
   "/preview",
   "/upload",

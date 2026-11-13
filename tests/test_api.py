@@ -241,3 +241,80 @@ def test_camera_manual_capture_is_idempotent_and_downloadable(client, tmp_path, 
         assert client.post("/camera/capture", json={"request_id": str(uuid4())}).status_code == 409
     finally:
         session.stop()
+
+
+def test_automatic_camera_records_and_broadcasts_without_capture_endpoint(client, tmp_path, monkeypatch):
+    from camera import CameraSession
+    from test_camera_session import wait_for
+    from tools.create_test_media import create_test_media
+    _, video = create_test_media(tmp_path / "auto-media", frames=4)
+    predictor = lambda frame, conf, device: FakeDetector().predict(np.zeros((24, 32, 3), dtype=np.uint8), conf)
+    session = CameraSession(predictor, tmp_path / "auto-captures", record=database.save_inspection)
+    session.on_record = main.camera.on_record
+    monkeypatch.setattr(main, "camera", session)
+    monkeypatch.setattr(main, "DEMO_VIDEO", video)
+    try:
+        with client.websocket_connect("/ws/monitor") as monitor:
+            response = client.post("/camera/start", json={"source_type": "demo", "device": "cpu", "auto_interval_s": 0.5})
+            assert response.status_code == 200
+            result = monitor.receive_json()
+            assert result["capture_id"]
+        status = wait_for(session, lambda s: s["inspections_recorded"] >= 1)
+        assert status["auto_interval_s"] == 0.5
+        assert status["last_inspection"]["capture_id"] == result["capture_id"]
+        client.post("/camera/stop").raise_for_status()
+        count = client.get("/stats").json()["total_inspected"]
+        assert count >= 1 and count == session.status()["inspections_recorded"]
+    finally:
+        session.stop()
+
+
+def test_serial_connection_preserves_motor_lock_and_rejects_arbitrary_ports(client, monkeypatch):
+    from conveyor import ConveyorSession
+    from test_conveyor import FakeSerial
+    port = FakeSerial()
+    conveyor = ConveyorSession(serial_factory=lambda *a, **k: port, boot_wait=0)
+    monkeypatch.setattr(main, "conveyor", conveyor)
+    monkeypatch.setattr(main, "serial_ports", lambda: [{"port": "TEST", "description": "Fake"}])
+    assert client.get("/conveyor/ports").json()["ports"][0]["port"] == "TEST"
+    assert client.post("/conveyor/connect", json={"port": "socket://remote:1234"}).status_code == 409
+    assert client.post("/conveyor/connect", json={"port": "TEST"}).json()["connected"] is True
+    response = client.post("/camera/start", json={"device": "cpu", "use_conveyor": True})
+    assert response.status_code == 409 and "bloqueado" in response.json()["detail"]
+    assert not any(command == "RUN" for _, command in port.commands)
+    assert client.post("/conveyor/disconnect").json()["connected"] is False
+
+
+def test_linked_camera_start_requires_local_operator_and_waits_for_ready(client, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from fastapi import HTTPException
+    from conveyor import ConveyorSession
+    from test_conveyor import FakeSerial
+    port = FakeSerial()
+    conveyor = ConveyorSession(hardware_confirmed=True, serial_factory=lambda *a, **k: port, boot_wait=0)
+    conveyor.connect("TEST")
+    monkeypatch.setattr(main, "conveyor", conveyor)
+    start = Mock(return_value={"running": True})
+    monkeypatch.setattr(main.camera, "start", start)
+    options = main.CameraStart(device="cpu", use_conveyor=True, auto_interval_s=1, conveyor_speed=30)
+    try:
+        with pytest.raises(HTTPException) as denied:
+            main.start_camera(options, SimpleNamespace(client=SimpleNamespace(host="192.168.1.5")))
+        assert denied.value.status_code == 409
+        start.assert_not_called()
+        main.start_camera(options, SimpleNamespace(client=SimpleNamespace(host="127.0.0.1")))
+        assert not any(command == "RUN" for _, command in port.commands)
+        start.call_args.kwargs["on_frame"]()
+        start.call_args.kwargs["on_ready"]()
+        assert conveyor.status()["running"]
+        start.call_args.kwargs["on_stop"]()
+        assert not conveyor.status()["running"]
+    finally:
+        conveyor.disconnect()
+
+
+@pytest.mark.parametrize("value", [-1, 0.1, 3601])
+def test_invalid_automatic_interval_rejected_before_source_is_opened(client, value):
+    response = client.post("/camera/start", json={"device": "cpu", "auto_interval_s": value})
+    assert response.status_code in (409, 422)

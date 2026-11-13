@@ -3,7 +3,7 @@
 # Acero Cifrado — inspección visual de piezas metálicas
 
 Adaptación universitaria de [Hvora2005/industrial-defect-detection](https://github.com/Hvora2005/industrial-defect-detection).
-Incluye captura por webcam y archivos locales, inferencia CPU/CUDA y registro manual de
+Incluye captura por webcam y archivos locales, inferencia CPU/CUDA y registro manual o automático por intervalo de
 inspecciones en Windows. Conserva teléfono, FastAPI, YOLO11, monitor e historial originales.
 La estación permite elegir entre el detector de defectos superficiales y el clasificador
 experimental de tres piezas estampadas. La [guía del prototipo](docs/clasificador-estampado.md)
@@ -93,7 +93,7 @@ Webcam USB / imagen / video → backend/capture.py → POST /detect
 | Componente | Responsabilidad |
 |---|---|
 | `frontend/` | React + TypeScript + Vite: inspección, panel, historial, estadísticas, configuración y monitor |
-| `frontend/src/views/Inspection.tsx` | Cámara USB del servidor, cámara del navegador/teléfono, captura manual, vista previa sin registro y carga de imágenes |
+| `frontend/src/views/Inspection.tsx` | Cámara USB del servidor, cámara del navegador/teléfono, inspección por intervalos o manual y carga de imágenes |
 | `backend/main.py` | FastAPI, rutas de inspección y páginas; difunde los resultados al monitor |
 | `backend/capture.py` | Cliente OpenCV añadido: selección por índice, búsqueda de cámaras, imagen/video local y vista previa; reutiliza `/detect` |
 | `backend/detector.py` | Comprueba clases NEU-DET y tarea, ejecuta inferencia, dibuja cajas, clases y confianza; emite `FAIL` o `NO_DETECTIONS` |
@@ -474,21 +474,25 @@ inferencia funcionan localmente. Las descargas y enlaces de documentación sí n
    La web muestra resolución real de los fotogramas y FPS informados por el controlador;
    la cámara puede ignorar los valores solicitados. Los ajustes de cámara no redimensionan
    archivos de video: estos mantienen sus dimensiones/FPS originales.
-3. Pulsa **Iniciar inspección**. La vista previa dibuja cajas, clases y confianza, muestra
-   CPU/GPU, latencia YOLO y FPS de procesamiento. **No guarda inspecciones por fotograma**.
-4. Coloca una pieza y pulsa **Capturar e inspeccionar una pieza** una sola vez. Ese evento
-   guarda un registro en SQLite y dos JPEG, original y anotado, en `outputs/captures/`.
-   Los enlaces permiten descargarlos; el monitor existente recibe la inspección por WebSocket.
+3. En **Registro de inspecciones**, selecciona **Automático por intervalo** (inicial: 2 s)
+   y configura el intervalo. Pulsa **Iniciar cámara** una vez. La vista previa muestra
+   CPU/GPU, latencia y FPS; cada intervalo guarda un registro en SQLite y dos JPEG
+   en `outputs/captures/`, actualiza el último resultado y lo envía al monitor.
+4. Para registrar solamente cuando tú lo decidas, elige **Captura manual** antes de
+   iniciar y pulsa **Capturar e inspeccionar**. En ese modo la vista previa no registra.
 5. Para ajustar el umbral durante la captura, cambia **Confianza** y pulsa **Aplicar confianza**.
    La web confirma el valor recibido por el backend.
 6. Pulsa **Detener** para liberar la fuente. Puedes cambiar cámara, resolución o dispositivo
    y volver a iniciar sin reiniciar FastAPI. Recargar la página recupera la sesión activa.
 
-Los contadores representan **eventos de inspección controlados por el operador**, no objetos
-físicos únicos reconocidos automáticamente. Pulsar otra vez para la misma pieza representa
-otra inspección. Reintentos de red con el mismo UUID reutilizan el resultado (últimos 64
-eventos en memoria); los archivos existentes tampoco se sobrescriben tras reiniciar. No hay
-sensor, seguimiento de identidad de piezas, banda, ESP32 ni mecanismo de rechazo.
+Los contadores representan **registros de inspección**, no objetos físicos únicos.
+En automático, la misma pieza puede generar varios registros a intervalos; también puede
+registrarse un encuadre vacío. No se incorpora sensor ni seguimiento de identidad de piezas.
+Reintentos manuales con el mismo UUID reutilizan el resultado (últimos 64 eventos en memoria).
+La conexión USB al ESP32 conserva su firmware y mantiene latidos en paralelo con YOLO.
+El movimiento queda bloqueado hasta confirmar el hardware y requiere activación explícita.
+Consulta [inspección automática y ESP32](docs/inspeccion-automatica-esp32.md) para configurar
+el intervalo, conectar el puerto y conocer las condiciones de paro. No se implementa rechazo mecánico.
 
 Si la cámara se desconecta, está ocupada o deja de leer, se muestra el error y se libera
 la captura. Reconecta y vuelve a iniciar; no hay reconexión automática. Un controlador que
@@ -498,7 +502,7 @@ la situación en lugar de afirmar que ya se detuvo. No se verificó desconexión
 ### Prueba con video sin cámara y uso por consola
 
 La fuente **Demo: sample.avi** repite el video sintético para probar controles, capturas y
-registro manual sin hardware. Se puede cambiar el archivo de demostración al arrancar
+registro automático o manual sin hardware. Se puede cambiar el archivo de demostración al arrancar
 mediante `ACERO_DEMO_VIDEO`, ruta local relativa a la raíz o absoluta.
 
 ```powershell
@@ -512,8 +516,8 @@ mediante `ACERO_DEMO_VIDEO`, ruta local relativa a la raíz o absoluta.
 La consola informa configuración solicitada/efectiva, dispositivo y rendimiento. El argumento
 `--device` también se admite en `training/test_inference.py`. En la API, `/detect`, `/upload`
 y `/preview` aceptan `?device=auto|cpu|cuda`; la selección explícita prevalece sobre el valor
-predeterminado `ACERO_DEVICE`. El modo periódico del teléfono ahora utiliza `/preview` sin
-incrementar contadores; su botón manual sigue registrando una inspección.
+predeterminado `ACERO_DEVICE`. En el navegador/teléfono, el modo automático registra por
+intervalo; en manual se puede analizar `/preview` sin incrementar contadores y capturar explícitamente.
 
 ### Rendimiento medido, no estimado a partir de especificaciones
 
@@ -652,7 +656,9 @@ documenta arriba; la captura de teléfono físico sigue pendiente.
 | `/camera/status`, `/camera/stream` | GET | Estado, rendimiento y vista previa MJPEG |
 | `/camera/settings` | POST | Aplicar `conf` durante la captura |
 | `/camera/capture` | POST | Captura manual: JSON `request_id` UUID; original/anotada y un registro |
-| `/captures/{filename}` | GET | Descargar JPEG de una captura manual |
+| `/captures/{filename}` | GET | Descargar JPEG de una inspección automática o manual |
+| `/conveyor/status`, `/conveyor/ports` | GET | Estado y puertos USB serial disponibles |
+| `/conveyor/connect`, `/conveyor/disconnect`, `/conveyor/stop` | POST | Conectar detenido, desconectar o detener la banda vinculada |
 
 ## Créditos y licencia
 
